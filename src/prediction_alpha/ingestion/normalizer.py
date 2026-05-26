@@ -62,13 +62,17 @@ def _normalize_status(value: Any) -> EventStatus:
 
 
 def _infer_category(raw: dict[str, Any]) -> str:
-    source = " ".join(
-        str(_first(raw, "category", "category_name", "series_ticker", "event_ticker", "title") or "")
-        .lower()
-        .split()
+    source_value = _first(
+        raw,
+        "category",
+        "category_name",
+        "series_ticker",
+        "event_ticker",
+        "title",
     )
+    source = " ".join(str(source_value or "").lower().split())
     keyword_map = {
-        "econ": ("inflation", "fed", "rate", "gdp", "cpi", "jobs", "unemployment"),
+        "econ": ("econ", "inflation", "fed", "rate", "gdp", "cpi", "jobs", "unemployment"),
         "policy": ("election", "senate", "house", "president", "law", "tariff"),
         "weather": ("weather", "temperature", "hurricane", "rain", "snow"),
         "sports": ("nba", "nfl", "mlb", "nhl", "soccer", "game"),
@@ -81,7 +85,7 @@ def _infer_category(raw: dict[str, Any]) -> str:
 
 
 def _event_id(platform: Platform, external_id: str) -> str:
-    digest = hashlib.sha256(f"{platform}:{external_id}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{platform}:{external_id}".encode()).hexdigest()
     return f"{platform}-{digest[:24]}"
 
 
@@ -151,7 +155,8 @@ def normalize_ws_message(message: dict[str, Any]) -> Event | None:
     payload = message.get("msg") if isinstance(message.get("msg"), dict) else message
     if not isinstance(payload, dict):
         return None
-    market_payload = payload.get("market") if isinstance(payload.get("market"), dict) else payload
+    candidate = payload.get("market")
+    market_payload: dict[str, Any] = candidate if isinstance(candidate, dict) else payload
     external_id = _first(market_payload, "market_ticker", "ticker", "id")
     if external_id is None:
         return None

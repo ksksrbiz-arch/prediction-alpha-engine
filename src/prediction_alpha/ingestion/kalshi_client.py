@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterable
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import websockets
-from websockets.client import WebSocketClientProtocol
 
 from prediction_alpha.config import Settings
 from prediction_alpha.ingestion.normalizer import normalize_market, normalize_ws_message
@@ -36,7 +35,7 @@ class KalshiRESTClient:
         self._last_request_at = 0.0
         self._log = get_logger("kalshi.rest")
 
-    async def __aenter__(self) -> "KalshiRESTClient":
+    async def __aenter__(self) -> KalshiRESTClient:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -74,7 +73,7 @@ class KalshiRESTClient:
                 continue
             try:
                 response.raise_for_status()
-                return response.json()
+                return cast(dict[str, Any], response.json())
             except (httpx.HTTPStatusError, ValueError) as exc:
                 last_exc = exc
                 if response.status_code >= 500:
@@ -161,7 +160,7 @@ class KalshiWebSocketClient:
 
     async def _subscribe(
         self,
-        ws: WebSocketClientProtocol,
+        ws: Any,
         *,
         channels: Iterable[str],
         market_tickers: Iterable[str] | None,
@@ -186,7 +185,7 @@ class KalshiWebSocketClient:
                     self.settings.kalshi_ws_url,
                     ping_interval=self.settings.kalshi_ws_ping_interval_seconds,
                     ping_timeout=self.settings.kalshi_ws_ping_interval_seconds,
-                    extra_headers=self._headers(),
+                    additional_headers=self._headers(),
                 ) as ws:
                     await self._subscribe(ws, channels=channels, market_tickers=market_tickers)
                     reconnect_delay = self.settings.kalshi_ws_reconnect_initial_seconds
@@ -198,7 +197,7 @@ class KalshiWebSocketClient:
                         event = normalize_ws_message(message)
                         if event is not None:
                             yield event
-            except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as exc:
+            except (OSError, websockets.WebSocketException, TimeoutError) as exc:
                 self._log.warning(
                     "kalshi_ws_reconnect",
                     error=str(exc),
@@ -217,6 +216,6 @@ class KalshiWebSocketClient:
     @staticmethod
     def _decode(raw_message: str | bytes) -> dict[str, Any] | None:
         try:
-            return json.loads(raw_message)
+            return cast(dict[str, Any], json.loads(raw_message))
         except (TypeError, ValueError):
             return None

@@ -21,7 +21,8 @@ def compute_features(event: Event) -> dict[str, Any]:
             (event.resolution_date - datetime.now(UTC)).total_seconds() / 86_400,
             0.0,
         )
-    volume_trend = _volume_trend(event.enriched_features.get("candles") or event.raw_metadata.get("candles"))
+    candles = event.enriched_features.get("candles") or event.raw_metadata.get("candles")
+    volume_trend = _volume_trend(candles)
     return {
         "implied_prob": implied_prob,
         "liquidity_score": event.liquidity_score,

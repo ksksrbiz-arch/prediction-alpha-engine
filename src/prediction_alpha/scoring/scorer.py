@@ -21,7 +21,7 @@ class HybridScorer:
         self.min_composite_score = min_composite_score
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "HybridScorer":
+    def from_settings(cls, settings: Settings) -> HybridScorer:
         return cls(
             rules=ScoringRules(
                 min_liquidity_score=settings.min_liquidity_score,
@@ -71,7 +71,8 @@ class HybridScorer:
     def _placeholder_model_probability(self, event: Event, features: dict[str, object]) -> float:
         """Transparent EV proxy until enough feedback exists for real ML calibration."""
 
-        implied = float(features.get("implied_prob") or 0.5)
+        implied_raw = features.get("implied_prob")
+        implied = float(implied_raw) if isinstance(implied_raw, int | float) else 0.5
         trend = features.get("volume_trend")
         trend_boost = 0.0
         if isinstance(trend, int | float):

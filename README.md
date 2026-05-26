@@ -39,6 +39,7 @@ git clone https://github.com/ksksrbiz-arch/prediction-alpha-engine.git
 cd prediction-alpha-engine
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 cp .env.example .env
 # Public Kalshi market data works read-only; set DATABASE_URL to store to Postgres.
 python -m prediction_alpha.ingestion.cli backfill --max-pages 1 --print-json

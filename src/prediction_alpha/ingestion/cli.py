@@ -38,7 +38,14 @@ async def backfill(args: argparse.Namespace) -> None:
             score = scorer.score(event)
             await _maybe_store(store, event, score)
             if args.print_json:
-                print(json.dumps({"event": event.model_dump(mode="json"), "score": score.model_dump(mode="json")}))
+                print(
+                    json.dumps(
+                        {
+                            "event": event.model_dump(mode="json"),
+                            "score": score.model_dump(mode="json"),
+                        }
+                    )
+                )
             count += 1
     if store:
         await store.close()
@@ -59,7 +66,14 @@ async def stream(args: argparse.Namespace) -> None:
     ):
         score = scorer.score(event)
         await _maybe_store(store, event, score)
-        print(json.dumps({"event": event.model_dump(mode="json"), "score": score.model_dump(mode="json")}))
+        print(
+            json.dumps(
+                {
+                    "event": event.model_dump(mode="json"),
+                    "score": score.model_dump(mode="json"),
+                }
+            )
+        )
 
 
 async def backtest(args: argparse.Namespace) -> None:

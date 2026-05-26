@@ -40,7 +40,14 @@ async def run_backtest(client: KalshiRESTClient, *, max_pages: int = 1) -> dict[
         if actual is not None and isinstance(predicted, int | float):
             outcomes.append(actual)
             predictions.append(float(predicted))
-    brier = mean([(prediction - outcome) ** 2 for prediction, outcome in zip(predictions, outcomes)])
+    brier = None
+    if predictions:
+        brier = mean(
+            [
+                (prediction - outcome) ** 2
+                for prediction, outcome in zip(predictions, outcomes, strict=True)
+            ]
+        )
     return {
         "markets_scored": scored,
         "passed_filter": passed,
