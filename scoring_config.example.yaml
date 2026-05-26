@@ -1,0 +1,25 @@
+# Scoring configuration — drop this file next to .env or set SCORING_CONFIG_PATH.
+# Any key omitted falls back to defaults in ScoringConfig.
+#
+# Productization note: in Phase 4 each user profile will have its own scoring
+# config YAML (or DB row) with per-user thresholds and category weights.
+
+min_liquidity_score: 0.20
+min_volume_24h: 100.0
+max_days_to_resolution: 60
+min_composite_score: 0.55
+min_edge: 0.02
+allowed_categories: []   # empty = allow all
+
+composite_weights:
+  edge: 3.0
+  liquidity_adjusted_ev: 4.0
+  confidence: 0.25
+  portfolio_fit: 0.20
+
+category_weights:
+  econ: 0.75
+  policy: 0.75
+  weather: 0.75
+  sports: 0.35
+  default: 0.50

@@ -29,5 +29,5 @@ strict = true
 packages = ["prediction_alpha"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg"]
+module = ["asyncpg", "yaml"]
 ignore_missing_imports = true

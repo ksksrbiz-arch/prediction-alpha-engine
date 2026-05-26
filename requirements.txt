@@ -27,6 +27,7 @@ langgraph
 python-dotenv
 structlog  # structured logging
 httpx  # for REST
+pyyaml  # YAML scoring config
 
 # Dev / Test
 pytest

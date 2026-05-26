@@ -92,4 +92,21 @@ Built for Keith / 1COMMERCE LLC — profit-first sovereign automation.
 - `src/prediction_alpha/ingestion/normalizer.py` maps Kalshi payloads into the canonical `Event` model and keeps raw payloads for replay/Brain integration.
 - `src/prediction_alpha/ingestion/storage.py` upserts events into Postgres and records opportunity scores.
 - `src/prediction_alpha/scoring/` computes implied probability, liquidity, horizon, optional volume trend, strict filters, and a transparent heuristic scorer with a future ML hook.
+- `src/prediction_alpha/api/` exposes a FastAPI app with `GET /opportunities?min_score=0.7` for the product API surface.
 - `python -m prediction_alpha.ingestion.cli backtest --max-pages 1` runs a resolved-market calibration skeleton when Kalshi historical/resolved payloads include outcomes.
+
+### API Server
+
+```bash
+uvicorn prediction_alpha.api.app:create_app --factory --host 0.0.0.0 --port 8000
+# Then: curl http://localhost:8000/opportunities?min_score=0.7
+# Health: curl http://localhost:8000/health
+```
+
+### Scoring Configuration
+
+Scoring thresholds, composite weights, and category weights can be overridden via:
+1. Environment variables (`.env`) — e.g. `MIN_COMPOSITE_SCORE=0.60`
+2. A YAML file — set `SCORING_CONFIG_PATH=scoring_config.yaml` (see `scoring_config.example.yaml`)
+
+YAML takes precedence when `SCORING_CONFIG_PATH` is set.
