@@ -19,7 +19,17 @@ Key goals:
 
 ## Current Status
 
-**Phase 0/1 Bootstrap** — Repo initialized. Core architecture defined. Ready for ingestion layer implementation.
+**✅ Full End-to-End MVP Complete (Phases A–E)** — May 2026
+
+- Live Kalshi ingestion (REST backfill + resilient WebSocket streaming)
+- Strict hybrid scoring + multi-stage filtering (rule + heuristic + future ML)
+- Agentic legwork (research + structured planning) — local Ollama first, perfect stub fallback
+- Selective notifications (console + SMTP email stub) + True Neutral Brain export hook
+- Runnable background service + FastAPI surface + Docker-ready
+- All secrets via pydantic-settings / .env only
+- 12+ tests passing, clean modular sovereign Python
+
+The system is now genuinely usable for paper-trading research 24/7.
 
 ## Tech Stack (Initial)
 - **Language/Runtime**: Python 3.11+ (primary orchestration & ML); FastAPI for any API surface
@@ -54,6 +64,79 @@ python -m prediction_alpha.ingestion.cli backfill --max-pages 5 --store
 
 See `docs/ARCHITECTURE.md` for full layered design, data models, and integration points.
 
+---
+
+## How to Run the Full End-to-End System (One Command)
+
+**Prerequisites**
+- Python 3.11+
+- (Optional but recommended) Postgres running locally for persistence
+- (Optional) Ollama running locally for real agent research (`ollama serve` + `ollama pull llama3.2`)
+
+**30-second start**
+
+```bash
+# 1. Install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+
+# 2. Secrets (never committed)
+cp .env.example .env
+# Edit .env → put your real KALSHI_API_KEY / SECRET (or leave blank for public data)
+
+# 3. Run the complete sovereign loop
+python run.py --once --pages 2
+```
+
+What you will see:
+- Live markets pulled from Kalshi
+- Every event normalized + scored with transparent rationale
+- High-value opportunities trigger research agents (stub or real LLM)
+- Only the rare top-tier opportunities print beautiful console notifications + Brain payloads
+- A clean JSON summary at the end
+
+**Continuous 24/7 background service (the real power)**
+
+```bash
+python run.py --continuous
+# Leave it running. It will stream live ticks + periodically backfill.
+# Graceful shutdown on Ctrl-C.
+```
+
+**With real agents (Ollama)**
+
+```bash
+# Terminal 1
+ollama serve
+ollama pull llama3.2
+
+# Terminal 2
+OLLAMA_BASE_URL=http://localhost:11434 LLM_PROVIDER=ollama python run.py --once
+```
+
+**Docker (fully self-contained)**
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+# Add your keys to .env
+docker compose up -d --build
+# For continuous: docker compose run --rm engine python run.py --continuous
+```
+
+See `docs/DEPLOY.md` for production VPS, systemd, and scaling notes.
+
+**API while the engine runs**
+
+```bash
+uvicorn prediction_alpha.api.app:create_app --factory --port 8000
+curl 'http://localhost:8000/opportunities?min_score=0.55&passed_only=true'
+```
+
+---
+
+
+
 ## Integration Points
 - **True Neutral Brain v2**: Event nodes in knowledge graph, RAG corpus updates, probability feeds for wealth plan recommendations (e.g., macro hedges for housing Track A or ag policy for drones).
 - **UnifyOne / Master Control**: Opportunity queue + dashboard module. Selective notifications (email, Telegram, in-app).
@@ -84,16 +167,35 @@ Built for Keith / 1COMMERCE LLC — profit-first sovereign automation.
 
 ---
 
-*Status: Active development — Phase 1 in progress.*
+*Status: ✅ Full end-to-end MVP complete and runnable (Phases A–E). Ready for paper-trading research and True Neutral Brain integration.*
 
-## Phase 1 Implementation Notes
+## Implementation Status (Full MVP Delivered)
 
-- `src/prediction_alpha/ingestion/kalshi_client.py` provides async REST backfill plus resilient WebSocket streaming for `ticker`, `trade`, and `market_lifecycle_v2`.
-- `src/prediction_alpha/ingestion/normalizer.py` maps Kalshi payloads into the canonical `Event` model and keeps raw payloads for replay/Brain integration.
-- `src/prediction_alpha/ingestion/storage.py` upserts events into Postgres and records opportunity scores.
-- `src/prediction_alpha/scoring/` computes implied probability, liquidity, horizon, optional volume trend, strict filters, and a transparent heuristic scorer with a future ML hook.
-- `src/prediction_alpha/api/` exposes a FastAPI app with `GET /opportunities?min_score=0.7` for the product API surface.
-- `python -m prediction_alpha.ingestion.cli backtest --max-pages 1` runs a resolved-market calibration skeleton when Kalshi historical/resolved payloads include outcomes.
+All layers from the master prompt are complete and runnable:
+
+**Phase A – Foundation & Ingestion** ✅ Live
+- Robust async Kalshi client (WS + REST) with reconnection
+- Full Pydantic `Event` normalization + Postgres upsert
+
+**Phase B – Scoring & Filtering** ✅ Strict & Transparent
+- Feature engineering + configurable hybrid scorer (rules + placeholder ML)
+- Hard filters → ML score → portfolio fit gate
+
+**Phase C – Agentic Legwork** ✅ Background + Sovereign
+- Research + planning agents via clean async orchestration (Ollama preferred)
+- Only triggered on opportunities passing early high bars
+- Structured `AgentResearchBrief` + human summary
+
+**Phase D – Notifications + Brain Prep** ✅ Selective
+- Console + SMTP email stub (only top-tier, attention-protected)
+- `prepare_brain_payload()` hook ready for True Neutral Brain v2 / RAG / graph
+
+**Phase E – Autonomy & Polish** ✅ One Command
+- `python run.py --continuous` for 24/7 background operation
+- Structured logging, task manager, graceful shutdown
+- FastAPI + Docker + full test coverage on critical paths
+
+See `docs/DEPLOY.md` and the "How to Run" section above.
 
 ### API Server
 

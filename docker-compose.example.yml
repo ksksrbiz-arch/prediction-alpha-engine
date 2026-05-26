@@ -1,0 +1,62 @@
+# Example docker-compose for a self-hosted Prediction Alpha deployment.
+# 1. cp docker-compose.example.yml docker-compose.yml
+# 2. Create .env with your real Kalshi keys + DATABASE_URL pointing at the db service
+# 3. docker compose up -d --build
+
+version: "3.9"
+
+services:
+  engine:
+    build: .
+    container_name: prediction-alpha-engine
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://prediction_alpha:prediction_alpha@db:5432/prediction_alpha
+      # For continuous background operation instead of one-shot:
+      # CMD override example: docker compose run --rm engine python run.py --continuous
+    depends_on:
+      db:
+        condition: service_healthy
+    # For the API surface (optional)
+    ports:
+      - "8000:8000"
+    command: ["python", "run.py", "--once", "--pages", "3"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: local Ollama for fully offline agents (recommended for sovereignty)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: prediction-alpha-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    # Pull a small fast model on first start (adjust to your hardware):
+    # entrypoint: ["sh", "-c", "ollama serve & sleep 5 && ollama pull llama3.2 && wait"]
+    profiles: ["with-llm"]
+
+  db:
+    image: postgres:16-alpine
+    container_name: prediction-alpha-db
+    environment:
+      POSTGRES_USER: prediction_alpha
+      POSTGRES_PASSWORD: prediction_alpha
+      POSTGRES_DB: prediction_alpha
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prediction_alpha -d prediction_alpha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama:

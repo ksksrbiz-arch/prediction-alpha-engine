@@ -130,6 +130,29 @@ class Settings(BaseSettings):
         "postgresql://prediction_alpha:prediction_alpha@localhost:5432/prediction_alpha"
     )
 
+    # --- Agents / LLM (sovereign-first: local Ollama preferred) ---
+    # Productization note: per-profile agent config (model choice, temperature,
+    # research depth) will be added in Phase 4. For now global with .env override.
+    llm_provider: Literal["ollama", "stub"] = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"  # or phi3, mistral, qwen2.5:3b — small & fast for MVP
+    agent_request_timeout_seconds: float = 45.0
+    agent_min_composite_to_research: float = 0.60  # only spawn expensive research on promising candidates
+    agent_enabled: bool = True
+
+    # --- Notifications (selective, top-tier only) ---
+    # Productization note: in a real deployment each user profile gets its own
+    # notification preferences, digest frequency, and channels (email, Telegram,
+    # UnifyOne push). Start simple: console + SMTP stub.
+    notifications_enabled: bool = True
+    notify_min_composite: float = 0.68  # very selective — protects attention
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "prediction-alpha@yourdomain.com"
+    notify_email_to: str | None = None  # comma-separated list
+
     # --- Scoring (env-level overrides; YAML takes precedence if file exists) ---
     scoring_config_path: str | None = None
     min_liquidity_score: float = 0.20

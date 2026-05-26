@@ -1,0 +1,26 @@
+# Docker ignore — keep image small and secrets out
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.md
+!README.md
+docs/
+tests/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+scoring_config.yaml
+*.log
+.vscode
+.idea
+Dockerfile
+docker-compose*.yml

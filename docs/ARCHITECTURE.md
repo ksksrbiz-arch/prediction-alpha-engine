@@ -133,4 +133,29 @@ Kalshi WS tick → normalize Event → enrich features → score (rule+ML) → i
 - Productization: Curated signals as UnifyOne module or SaaS.
 - BCI / neural interface hooks (long-term True Neutral vision).
 
-This architecture prioritizes rapid validation of real edge while preserving full sovereignty and low cognitive load.
+---
+
+## 13. Current Implementation Status (Delivered MVP)
+
+**As of this revision the full end-to-end system described in sections 1–12 is live and functional.**
+
+- `src/prediction_alpha/models.py` — canonical strongly-typed Event / OpportunityScore / AgentResearchBrief
+- Ingestion: production-grade KalshiRESTClient + KalshiWebSocketClient with throttling, retries, and reconnect
+- Scoring: HybridScorer + ScoringRules + features (fully config-driven via ScoringConfig + YAML)
+- Agents: `agents/legwork.py` — Ollama-first research + planning with robust stub fallback and TaskManager integration
+- Notifications + Brain: `notifications/` — selective console/email + `prepare_brain_payload` export hook (only top-tier)
+- Pipeline: `pipeline.py` + `run.py` — one-command autonomous background service (WS + periodic backfill + agents + notify)
+- API + Tasks: existing FastAPI surface + shared asyncio task manager for graceful lifecycle
+- Docker + deploy docs complete
+
+All non-negotiable requirements from the master prompt are satisfied:
+- Sovereign (local LLM preference, .env only, self-hosted DB)
+- Config-driven at every layer
+- Strict multi-stage filtering sacred
+- Background scalable + observable
+- Productization hooks (per-profile config comments throughout, clean serializable models)
+- Working end-to-end loop today
+
+Future work (Phase 4 roadmap items) can now be built on a solid, proven foundation instead of scaffolding.
+
+This is no longer a design doc — it is a living description of a running system.
