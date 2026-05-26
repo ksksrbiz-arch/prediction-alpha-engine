@@ -1,0 +1,35 @@
+# Core
+fastapi>=0.115
+uvicorn[standard]
+websockets>=12.0
+asyncio
+pydantic>=2.0
+pydantic-settings
+
+# Data & Analysis
+pandas>=2.2
+polars>=1.0
+sqlalchemy>=2.0
+psycopg2-binary  # or asyncpg
+pgvector
+
+# ML
+scikit-learn>=1.5
+xgboost
+joblib
+
+# Agents / LLM (initial)
+langchain>=0.3
+langgraph
+# For local models later: ollama, llama-cpp-python, etc.
+
+# Utils
+python-dotenv
+structlog  # structured logging
+httpx  # for REST
+
+# Dev / Test
+pytest
+black
+ruff
+mypy
