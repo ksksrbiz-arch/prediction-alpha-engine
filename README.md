@@ -32,15 +32,23 @@ Key goals:
 - **Deployment**: Self-hosted VPS/Render/Hetzner, Docker-friendly
 - **Versioning**: Git + semantic; strong typing (pydantic, mypy)
 
-## Quick Start (After Phase 1)
+## Quick Start (Phase 1)
 
 ```bash
 git clone https://github.com/ksksrbiz-arch/prediction-alpha-engine.git
 cd prediction-alpha-engine
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# Set KALSHI_API_KEY etc in .env
-python -m src.prediction_alpha.ingestion.kalshi_client  # test WS
+cp .env.example .env
+# Public Kalshi market data works read-only; set DATABASE_URL to store to Postgres.
+python -m prediction_alpha.ingestion.cli backfill --max-pages 1 --print-json
+python -m prediction_alpha.ingestion.cli stream --channels ticker trade market_lifecycle_v2
+```
+
+To persist normalized events and scores:
+
+```bash
+python -m prediction_alpha.ingestion.cli backfill --max-pages 5 --store
 ```
 
 See `docs/ARCHITECTURE.md` for full layered design, data models, and integration points.
@@ -76,3 +84,11 @@ Built for Keith / 1COMMERCE LLC — profit-first sovereign automation.
 ---
 
 *Status: Active development — Phase 1 in progress.*
+
+## Phase 1 Implementation Notes
+
+- `src/prediction_alpha/ingestion/kalshi_client.py` provides async REST backfill plus resilient WebSocket streaming for `ticker`, `trade`, and `market_lifecycle_v2`.
+- `src/prediction_alpha/ingestion/normalizer.py` maps Kalshi payloads into the canonical `Event` model and keeps raw payloads for replay/Brain integration.
+- `src/prediction_alpha/ingestion/storage.py` upserts events into Postgres and records opportunity scores.
+- `src/prediction_alpha/scoring/` computes implied probability, liquidity, horizon, optional volume trend, strict filters, and a transparent heuristic scorer with a future ML hook.
+- `python -m prediction_alpha.ingestion.cli backtest --max-pages 1` runs a resolved-market calibration skeleton when Kalshi historical/resolved payloads include outcomes.
