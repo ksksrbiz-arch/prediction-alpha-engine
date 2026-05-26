@@ -23,9 +23,10 @@ class PostgresStore:
         self.database_url = database_url
         self._pool: asyncpg.Pool | None = None
 
-    async def connect(self) -> None:
+    async def connect(self) -> asyncpg.Pool:
         if self._pool is None:
             self._pool = await asyncpg.create_pool(dsn=self.database_url, min_size=1, max_size=5)
+        return self._pool
 
     async def close(self) -> None:
         if self._pool is not None:
@@ -34,14 +35,8 @@ class PostgresStore:
 
     @asynccontextmanager
     async def connection(self) -> AsyncIterator[asyncpg.Connection]:
-        if self._pool is None:
-            await self.connect()
-        if self._pool is None:
-            raise RuntimeError(
-                "Postgres pool is not initialized. Ensure connect() was called before using "
-                "the connection."
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self.connect()
+        async with pool.acquire() as conn:
             yield conn
 
     async def create_schema(self) -> None:
