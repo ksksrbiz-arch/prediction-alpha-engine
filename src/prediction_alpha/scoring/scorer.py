@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TypeGuard
+
 from prediction_alpha.config import Settings
 from prediction_alpha.models import Event, OpportunityScore, RecommendedAction
 from prediction_alpha.scoring.features import compute_features
 from prediction_alpha.scoring.filters import ScoringRules, apply_hard_filters
+
+
+def _is_numeric(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, int | float)
 
 
 class HybridScorer:
@@ -36,7 +42,7 @@ class HybridScorer:
         features = compute_features(event)
         filter_result = apply_hard_filters(event, self.rules)
         implied_raw = features.get("implied_prob")
-        if not isinstance(implied_raw, int | float):
+        if not _is_numeric(implied_raw):
             return OpportunityScore(
                 event_id=event.id,
                 edge_score=0.0,
@@ -90,7 +96,7 @@ class HybridScorer:
         implied = float(implied_raw) if isinstance(implied_raw, int | float) else 0.5
         trend = features.get("volume_trend")
         trend_boost = 0.0
-        if isinstance(trend, int | float):
+        if _is_numeric(trend):
             trend_boost = max(min(float(trend) * 0.02, 0.04), -0.04)
         liquidity_boost = (event.liquidity_score - 0.5) * 0.03
         category_boost = 0.015 if event.category in {"econ", "policy", "weather"} else 0.0

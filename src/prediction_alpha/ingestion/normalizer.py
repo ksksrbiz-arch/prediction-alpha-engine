@@ -49,6 +49,14 @@ def _price_to_probability(value: Any) -> float | None:
     return min(max(number, 0.0), 1.0)
 
 
+def _calculate_implied_prob(yes_price: float | None, no_price: float | None) -> float | None:
+    if yes_price is not None:
+        return yes_price
+    if no_price is not None:
+        return 1.0 - no_price
+    return None
+
+
 def _normalize_status(value: Any) -> EventStatus:
     text = str(value or "").lower()
     if text in {"active", "open", "initialized"}:
@@ -111,7 +119,7 @@ def normalize_market(raw: dict[str, Any]) -> Event:
     no_price = _price_to_probability(_first(raw, "no_price", "no_ask", "no_bid"))
     if no_price is None and yes_price is not None:
         no_price = 1.0 - yes_price
-    implied_prob = yes_price if yes_price is not None else (1.0 - no_price if no_price else None)
+    implied_prob = _calculate_implied_prob(yes_price, no_price)
     resolution_date = _parse_datetime(
         _first(
             raw,

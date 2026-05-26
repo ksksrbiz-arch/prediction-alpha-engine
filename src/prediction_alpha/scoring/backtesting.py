@@ -44,7 +44,7 @@ async def run_backtest(client: KalshiRESTClient, *, max_pages: int = 1) -> dict[
     if predictions:
         brier = mean(
             [
-                (prediction - outcome) ** 2
+                (prediction - outcome) * (prediction - outcome)
                 for prediction, outcome in zip(predictions, outcomes, strict=True)
             ]
         )
