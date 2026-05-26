@@ -35,7 +35,22 @@ class HybridScorer:
     def score(self, event: Event) -> OpportunityScore:
         features = compute_features(event)
         filter_result = apply_hard_filters(event, self.rules)
-        implied_prob = features.get("implied_prob") or 0.5
+        implied_raw = features.get("implied_prob")
+        if not isinstance(implied_raw, int | float):
+            return OpportunityScore(
+                event_id=event.id,
+                edge_score=0.0,
+                liquidity_adjusted_ev=0.0,
+                confidence=0.0,
+                portfolio_fit=self._portfolio_fit(event),
+                composite_score=0.0,
+                recommended_action=RecommendedAction.REJECT,
+                agent_plan_summary=None,
+                passed_filter=False,
+                rationale=["missing_implied_probability", *filter_result.reasons],
+                features=features,
+            )
+        implied_prob = float(implied_raw)
         model_prob = self._placeholder_model_probability(event, features)
         edge = model_prob - implied_prob
         liquidity_adjusted_ev = edge * event.liquidity_score

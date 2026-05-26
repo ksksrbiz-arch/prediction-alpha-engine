@@ -8,6 +8,8 @@ from typing import Any
 
 from prediction_alpha.models import Event
 
+VOLUME_EPSILON = 0.01
+
 
 def compute_features(event: Event) -> dict[str, Any]:
     """Compute Phase 1 derived features from a normalized event."""
@@ -52,7 +54,7 @@ def _volume_trend(candles: Any) -> float | None:
         return None
     half = len(volumes) // 2
     older = mean(volumes[:half])
-    if older == 0:
-        older = 1.0
+    if older < VOLUME_EPSILON:
+        older = VOLUME_EPSILON
     recent = mean(volumes[half:])
     return (recent / older) - 1.0

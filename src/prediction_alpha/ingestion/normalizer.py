@@ -7,14 +7,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
+from prediction_alpha.ingestion.constants import CATEGORY_KEYWORDS
 from prediction_alpha.models import Event, EventStatus, Platform
-
-CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "econ": ("econ", "inflation", "fed", "rate", "gdp", "cpi", "jobs", "unemployment"),
-    "policy": ("election", "senate", "house", "president", "law", "tariff"),
-    "weather": ("weather", "temperature", "hurricane", "rain", "snow"),
-    "sports": ("nba", "nfl", "mlb", "nhl", "soccer", "game"),
-}
 
 
 def _first(raw: dict[str, Any], *keys: str) -> Any:
