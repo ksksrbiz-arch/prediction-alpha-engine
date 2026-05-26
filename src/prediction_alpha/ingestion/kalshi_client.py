@@ -23,6 +23,9 @@ class KalshiRateLimitError(RuntimeError):
 class KalshiRESTClient:
     """Read-oriented public REST client for Kalshi market data."""
 
+    # Guard against unreasonably low request rates.
+    _MIN_REQUESTS_PER_SECOND = 0.1
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._client = httpx.AsyncClient(
@@ -31,7 +34,10 @@ class KalshiRESTClient:
             headers=self._headers(),
         )
         self._lock = asyncio.Lock()
-        self._min_interval = 1.0 / max(settings.kalshi_requests_per_second, 0.1)
+        self._min_interval = 1.0 / max(
+            settings.kalshi_requests_per_second,
+            self._MIN_REQUESTS_PER_SECOND,
+        )
         self._last_request_at = 0.0
         self._log = get_logger("kalshi.rest")
 

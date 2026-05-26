@@ -10,7 +10,7 @@ pandas>=2.2
 polars>=1.0
 sqlalchemy>=2.0
 asyncpg>=0.30.0
-psycopg2-binary  # or asyncpg
+psycopg2-binary  # kept as sync fallback; asyncpg is the primary async driver
 pgvector
 
 # ML

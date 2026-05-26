@@ -108,7 +108,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- API surface ---
-    api_host: str = "0.0.0.0"  # noqa: S104 — bind-all is intentional for container use
+    # Productization note: 0.0.0.0 is intentional for container / Docker / Render
+    # deployments.  Production should front this with a reverse proxy (nginx, Caddy)
+    # or restrict access via firewall rules.
+    api_host: str = "0.0.0.0"  # noqa: S104
     api_port: int = 8000
 
     # --- Kalshi ---
