@@ -36,7 +36,8 @@ class PostgresStore:
     async def connection(self) -> AsyncIterator[asyncpg.Connection]:
         if self._pool is None:
             await self.connect()
-        assert self._pool is not None
+        if self._pool is None:
+            raise RuntimeError("Postgres pool is not initialized")
         async with self._pool.acquire() as conn:
             yield conn
 

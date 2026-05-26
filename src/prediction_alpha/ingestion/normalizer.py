@@ -9,6 +9,13 @@ from typing import Any
 
 from prediction_alpha.models import Event, EventStatus, Platform
 
+CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "econ": ("econ", "inflation", "fed", "rate", "gdp", "cpi", "jobs", "unemployment"),
+    "policy": ("election", "senate", "house", "president", "law", "tariff"),
+    "weather": ("weather", "temperature", "hurricane", "rain", "snow"),
+    "sports": ("nba", "nfl", "mlb", "nhl", "soccer", "game"),
+}
+
 
 def _first(raw: dict[str, Any], *keys: str) -> Any:
     for key in keys:
@@ -71,13 +78,7 @@ def _infer_category(raw: dict[str, Any]) -> str:
         "title",
     )
     source = " ".join(str(source_value or "").lower().split())
-    keyword_map = {
-        "econ": ("econ", "inflation", "fed", "rate", "gdp", "cpi", "jobs", "unemployment"),
-        "policy": ("election", "senate", "house", "president", "law", "tariff"),
-        "weather": ("weather", "temperature", "hurricane", "rain", "snow"),
-        "sports": ("nba", "nfl", "mlb", "nhl", "soccer", "game"),
-    }
-    for category, keywords in keyword_map.items():
+    for category, keywords in CATEGORY_KEYWORDS.items():
         if any(keyword in source for keyword in keywords):
             return category
     category = _first(raw, "category", "category_name")

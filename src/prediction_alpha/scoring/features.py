@@ -51,6 +51,8 @@ def _volume_trend(candles: Any) -> float | None:
     if len(volumes) < 4:
         return None
     half = len(volumes) // 2
-    older = mean(volumes[:half]) or 1.0
+    older = mean(volumes[:half])
+    if older == 0:
+        older = 1.0
     recent = mean(volumes[half:])
     return (recent / older) - 1.0
