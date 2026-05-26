@@ -169,3 +169,97 @@ def normalize_ws_message(message: dict[str, Any]) -> Event | None:
     normalized.setdefault("status", "open")
     normalized["ws_type"] = message.get("type")
     return normalize_market(normalized)
+
+
+# ---------------------------------------------------------------------------
+# Polymarket normalization (Gamma API payloads)
+# ---------------------------------------------------------------------------
+
+def normalize_polymarket_market(raw: dict[str, Any]) -> Event:
+    """Normalize a Polymarket market from the Gamma API into the canonical Event.
+
+    Polymarket specifics:
+    - Markets can be binary (2 outcomes) or multi-outcome.
+    - Prices come as strings in "outcomePrices" (e.g. ["0.42", "0.58"]).
+    - Volume/liquidity in "volumeNum", "liquidityNum", "volume24hr".
+    - Resolution in "endDate" / "resolutionSource".
+    - Full outcome data preserved in raw_metadata.
+
+    For multi-outcome markets, we map the first (or highest-prob) outcome
+    to the yes_price for compatibility with existing scoring. The full set
+    of outcomes/prices lives in enriched_features["polymarket_outcomes"].
+    """
+    external_id = str(_first(raw, "id", "conditionId", "slug") or "")
+
+    # Outcomes & prices
+    outcomes = raw.get("outcomes") or raw.get("outcomeNames") or []
+    prices_raw = raw.get("outcomePrices") or raw.get("prices") or []
+    if isinstance(prices_raw, str):
+        try:
+            import json
+            prices_raw = json.loads(prices_raw)
+        except Exception:
+            prices_raw = []
+
+    # Normalize first outcome as "yes" for binary compatibility
+    yes_price = None
+    if prices_raw:
+        yes_price = _price_to_probability(prices_raw[0] if isinstance(prices_raw, (list, tuple)) else prices_raw)
+
+    no_price = None
+    if len(prices_raw) > 1:
+        no_price = _price_to_probability(prices_raw[1])
+    elif yes_price is not None:
+        no_price = 1.0 - yes_price
+
+    implied_prob = _calculate_implied_prob(yes_price, no_price)
+
+    # Volume & liquidity (Polymarket uses different field names)
+    volume_24h = float(_first(raw, "volume24hr", "volume24Hr", "volumeNum") or 0)
+    liquidity = float(_first(raw, "liquidityNum", "liquidity") or 0)
+    open_interest = float(_first(raw, "openInterest", "open_interest") or liquidity * 0.6)  # rough proxy
+
+    # Liquidity score (reuse Kalshi-style with Polymarket fields)
+    liq_score = _liquidity_score(raw, yes_price)
+    # Boost slightly for on-chain transparency signal (Polymarket is on Polygon)
+    if volume_24h > 1000 or liquidity > 5000:
+        liq_score = min(1.0, liq_score + 0.05)
+
+    resolution_date = _parse_datetime(
+        _first(raw, "endDate", "end_date", "resolutionDate", "createdAt")
+    )
+
+    now = datetime.now(UTC)
+
+    # Store full Polymarket structure for downstream (agents, Brain, features)
+    enriched = {
+        "platform": "polymarket",
+        "outcomes": outcomes,
+        "outcome_prices": prices_raw,
+        "clob_token_ids": raw.get("clobTokenIds") or raw.get("clob_token_ids"),
+        "resolution_source": raw.get("resolutionSource"),
+        "image": raw.get("image"),
+        "slug": raw.get("slug"),
+        "on_chain": True,  # Polymarket is on-chain (Polygon)
+    }
+
+    return Event(
+        id=_event_id(Platform.POLYMARKET, external_id),
+        platform=Platform.POLYMARKET,
+        external_id=external_id,
+        title=str(_first(raw, "question", "title", "slug") or external_id),
+        category=_infer_category(raw),
+        yes_price=yes_price,
+        no_price=no_price,
+        implied_prob=implied_prob,
+        volume_24h=volume_24h,
+        open_interest=open_interest,
+        liquidity_score=liq_score,
+        resolution_date=resolution_date,
+        status=_normalize_status(_first(raw, "active", "closed", "status")),
+        raw_metadata=raw,
+        enriched_features=enriched,
+        created_at=_parse_datetime(_first(raw, "createdAt", "created_at")) or now,
+        updated_at=_parse_datetime(_first(raw, "updatedAt", "updated_at")) or now,
+    )
+

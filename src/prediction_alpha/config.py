@@ -125,6 +125,18 @@ class Settings(BaseSettings):
     kalshi_ws_reconnect_initial_seconds: float = 1.0
     kalshi_ws_reconnect_max_seconds: float = 60.0
 
+    # --- Polymarket (read-only via Gamma + CLOB) ---
+    # Note: As of May 2026, Polymarket is invite-only / restricted for most US persons.
+    # This client is strictly read-only for data/analysis. Trading support can be
+    # added later via a separate authenticated CLOB client without changing the
+    # Event model or scoring pipeline.
+    polymarket_enabled: bool = True
+    polymarket_gamma_api_url: str = "https://gamma-api.polymarket.com"
+    polymarket_clob_url: str = "https://clob.polymarket.com"
+    polymarket_request_timeout_seconds: float = 20.0
+    polymarket_requests_per_second: float = 5.0
+    polymarket_poll_interval_seconds: float = 30.0  # for background polling when WS not used
+
     # --- Database ---
     database_url: str = (
         "postgresql://prediction_alpha:prediction_alpha@localhost:5432/prediction_alpha"
@@ -132,13 +144,39 @@ class Settings(BaseSettings):
 
     # --- Agents / LLM (sovereign-first: local Ollama preferred) ---
     # Productization note: per-profile agent config (model choice, temperature,
-    # research depth) will be added in Phase 4. For now global with .env override.
+    # research depth, tools) will be added in Phase 4. Global + YAML for now.
     llm_provider: Literal["ollama", "stub"] = "ollama"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"  # or phi3, mistral, qwen2.5:3b — small & fast for MVP
-    agent_request_timeout_seconds: float = 45.0
-    agent_min_composite_to_research: float = 0.60  # only spawn expensive research on promising candidates
+    ollama_model: str = "llama3.2"
+    agent_request_timeout_seconds: float = 55.0
+    agent_min_composite_to_research: float = 0.60
     agent_enabled: bool = True
+
+    # New hardened agent controls (Phase C+)
+    agent_config_path: str | None = None  # YAML overrides for prompts, tools, depth, etc.
+    agent_temperature: float = 0.28
+    agent_max_steps: int = 5
+    agent_enable_web_search: bool = False  # OFF by default for sovereignty + cost control
+    agent_critic_enabled: bool = True
+    agent_memory_enabled: bool = True
+
+    # Agent backend selection (LangGraph is optional)
+    agent_backend: Literal["auto", "python", "langgraph"] = "auto"
+
+    # Memory persistence (new in v2.1)
+    agent_memory_persist: Literal["none", "file", "postgres"] = "none"
+    agent_memory_persist_path: str | None = None  # used when persist = "file"
+
+    # --- True Neutral Brain v2 Ingestion (Phase 3+ integration) ---
+    # Productization note: this will become per-profile in the future.
+    brain_config_path: str | None = None
+    brain_ingest_enabled: bool = True
+    brain_ingest_min_composite: float = 0.62
+    brain_ingest_min_edge: float = 0.03
+    brain_ingest_allowed_categories: list[str] = Field(default_factory=list)
+    brain_embedding_enabled: bool = True
+    brain_embedding_dimension: int = 768
+    brain_embedding_provider: Literal["stub", "local", "remote"] = "stub"
 
     # --- Notifications (selective, top-tier only) ---
     # Productization note: in a real deployment each user profile gets its own
@@ -184,6 +222,38 @@ class Settings(BaseSettings):
             min_composite_score=self.min_composite_score,
             allowed_categories=self.allowed_categories,
         )
+
+    def build_agent_config(self) -> "AgentConfig":
+        """Build AgentConfig for the hardened legwork layer.
+
+        Precedence: explicit YAML (agent_config_path) > env defaults.
+        """
+        from prediction_alpha.agents.config import AgentConfig
+
+        if self.agent_config_path:
+            return AgentConfig.from_yaml(self.agent_config_path)
+
+        # Derive from Settings
+        enable_tools = ["knowledge_base"]
+        if self.agent_enable_web_search:
+            enable_tools.append("web_search")
+
+        return AgentConfig(
+            model=self.ollama_model,
+            temperature=self.agent_temperature,
+            timeout_seconds=self.agent_request_timeout_seconds,
+            max_steps=self.agent_max_steps,
+            critic_enabled=self.agent_critic_enabled,
+            memory_enabled=self.agent_memory_enabled,
+            enable_tools=enable_tools,
+            backend=self.agent_backend,
+        )
+
+    def build_brain_config(self) -> "BrainIngestionConfig":
+        """Build configuration for True Neutral Brain v2 ingestion."""
+        from prediction_alpha.brain.config import build_brain_config as _build
+
+        return _build(self)
 
 
 @lru_cache(maxsize=1)

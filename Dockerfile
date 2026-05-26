@@ -38,11 +38,22 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src
 
-# Default command: one-shot demo (override for continuous)
-CMD ["python", "run.py", "--once", "--pages", "3"]
+# Production entrypoint — supports both one-shot and continuous background mode.
+# Override CMD in compose or kubernetes for long-running:
+#   CMD ["python", "run.py", "--continuous"]
+ENTRYPOINT ["python", "-m", "prediction_alpha.api.app:create_app"]
+CMD ["python", "run.py", "--continuous"]
 
 # Healthcheck (used by compose / orchestrators)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "
+import urllib.request, sys, os
+port = os.environ.get('API_PORT', '8000')
+try:
+    urllib.request.urlopen(f'http://localhost:{port}/health', timeout=5)
+    sys.exit(0)
+except:
+    sys.exit(1)
+" || exit 1
 
 EXPOSE 8000

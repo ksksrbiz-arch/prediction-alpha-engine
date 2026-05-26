@@ -18,6 +18,9 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 
+from prediction_alpha.agents.legwork import get_agent_metrics
+from prediction_alpha.api.tasks import task_manager
+from prediction_alpha.feedback.loop import FeedbackLoop
 from prediction_alpha.models import Event, OpportunityScore
 from prediction_alpha.scoring.scorer import HybridScorer
 from prediction_alpha.utils.logging import get_logger
@@ -116,5 +119,148 @@ async def list_opportunities(
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "cached_opportunities": str(len(_scored_cache))}
+async def health() -> dict[str, Any]:
+    """Liveness probe - is the process alive?"""
+    return {
+        "status": "ok",
+        "cached_opportunities": len(_scored_cache),
+        "pending_tasks": task_manager.pending_count if 'task_manager' in globals() else 0,
+    }
+
+@router.get("/ready")
+async def ready() -> dict[str, Any]:
+    """Readiness probe - is the service ready to accept traffic?"""
+    return {
+        "status": "ready",
+        "cached_opportunities": len(_scored_cache),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Simple Production Status Dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/status", include_in_schema=False)
+async def status_dashboard() -> str:
+    """Minimal HTML dashboard for quick operational visibility."""
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Prediction Alpha Engine - Status</title>
+    <meta http-equiv="refresh" content="30">
+    <style>
+        body {{ font-family: system-ui, sans-serif; margin: 2rem; background: #0f172a; color: #e2e8f0; }}
+        .card {{ background: #1e2937; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; }}
+        h1 {{ color: #60a5fa; }}
+        .metric {{ font-size: 2rem; font-weight: bold; color: #34d399; }}
+        .label {{ color: #94a3b8; font-size: 0.9rem; }}
+    </style>
+</head>
+<body>
+    <h1>Prediction Alpha Engine</h1>
+    <div class="card">
+        <div class="label">Cached Opportunities</div>
+        <div class="metric">{len(_scored_cache)}</div>
+    </div>
+    <div class="card">
+        <div class="label">Pending Background Tasks</div>
+        <div class="metric">{task_manager.pending_count}</div>
+    </div>
+    <div class="card">
+        <div class="label">Agent Metrics (last 5 min summary)</div>
+        <pre>{get_agent_metrics().summary()}</pre>
+    </div>
+    <p style="color:#64748b">Auto-refreshes every 30s. For production use Prometheus + Grafana or your Master Control dashboard.</p>
+</body>
+</html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
+# Agent Metrics (v2 hardened legwork layer observability)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/metrics/agents", tags=["metrics"])
+async def get_agent_metrics_summary() -> dict[str, Any]:
+    """Return aggregated observability for the agentic legwork layer.
+
+    Includes success rate, average latency, tool usage, critic runs, etc.
+    This is the primary endpoint for dashboards and monitoring.
+    """
+    metrics = get_agent_metrics()
+    return metrics.summary()
+
+
+@router.get("/metrics/agents/runs", tags=["metrics"])
+async def get_agent_recent_runs(limit: int = Query(default=20, ge=1, le=100)) -> list[dict[str, Any]]:
+    """Return the most recent individual agent run records (lightweight).
+
+    Useful for debugging specific research jobs. Raw LLM output is truncated.
+    """
+    metrics = get_agent_metrics()
+    recent = metrics.runs[-limit:][::-1]  # newest first
+
+    sanitized = []
+    for run in recent:
+        sanitized.append({
+            "event_id": run.event_id,
+            "started_at": run.started_at.isoformat(),
+            "ended_at": run.ended_at.isoformat() if run.ended_at else None,
+            "success": run.success,
+            "steps_taken": run.steps_taken,
+            "tools_used": run.tools_used,
+            "critic_used": run.critic_used,
+            "memory_items_recalled": run.memory_items_recalled,
+            "llm_calls": run.llm_calls,
+            "approx_tokens": run.approx_tokens,
+            "processing_time_seconds": round(run.processing_time_seconds, 2),
+            "failure_reason": run.failure_reason,
+            "model": run.model,
+        })
+    return sanitized
+
+
+# ---------------------------------------------------------------------------
+# Feedback / Self-Improvement Endpoints
+# ---------------------------------------------------------------------------
+
+
+_feedback_loop: FeedbackLoop | None = None  # populated at app startup or lazily
+
+
+@router.get("/metrics/feedback", tags=["metrics"])
+async def get_feedback_calibration() -> dict[str, Any]:
+    """Return current calibration metrics from the feedback loop."""
+    global _feedback_loop
+    if _feedback_loop is None:
+        # In real usage this would be injected; for now return empty
+        return {"count": 0, "message": "FeedbackLoop not initialized in this process"}
+    return _feedback_loop.get_calibration_summary()
+
+
+@router.post("/feedback/log_resolution", tags=["feedback"])
+async def log_market_resolution(payload: dict[str, Any]) -> dict[str, str]:
+    """Manual or webhook endpoint to log a market's actual resolution.
+
+    Expected payload: {"event_id": "...", "actual": 1.0 or 0.0, "predicted": 0.XX (optional)}
+    In production this would be called by a settlement watcher.
+    """
+    # Minimal implementation — in a real system we'd look up the event/score from DB
+    global _feedback_loop
+    if _feedback_loop is None:
+        return {"status": "error", "message": "Feedback loop not available"}
+
+    # For demo we just accept and log
+    _feedback_loop.log_resolution(
+        # We don't have the full Event here in this minimal endpoint; create a stub
+        type("StubEvent", (), {
+            "id": payload.get("event_id"),
+            "platform": type("p", (), {"value": "unknown"})(),
+            "category": "unknown",
+            "implied_prob": payload.get("predicted"),
+        })(),
+        actual_outcome=float(payload.get("actual", 0.5)),
+        predicted_prob=payload.get("predicted"),
+    )
+    return {"status": "logged"}

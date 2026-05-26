@@ -1,0 +1,26 @@
+# Systemd service for Prediction Alpha Engine (production VPS)
+# Place in /etc/systemd/system/prediction-alpha.service
+# Then: systemctl daemon-reload && systemctl enable --now prediction-alpha
+
+[Unit]
+Description=Prediction Alpha Engine - Sovereign prediction market intelligence
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=prediction
+WorkingDirectory=/opt/prediction-alpha-engine
+Environment="PYTHONPATH=/opt/prediction-alpha-engine/src"
+EnvironmentFile=/opt/prediction-alpha-engine/.env
+ExecStart=/opt/prediction-alpha-engine/.venv/bin/python -m prediction_alpha run --continuous
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits (adjust to your VPS)
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

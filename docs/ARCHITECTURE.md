@@ -52,7 +52,10 @@ Stored in Postgres + pgvector for semantic search on events.
 
 ## 3. Ingestion Layer (Phase 1 Priority)
 
-- Kalshi: WebSocket channels (ticker, trade, market_lifecycle) + REST for historical/backfill (markets, series, orderbooks, candlesticks).
+- Kalshi: WebSocket channels (ticker, trade, market_lifecycle) + REST for historical/backfill.
+- Polymarket (read-only): Gamma API (https://gamma-api.polymarket.com) for markets/prices/volume + optional CLOB for orderbook depth. REST polling + iter_markets (WebSocket/RTDS can be added later).
+
+The Event model and all downstream layers (scoring, agents, Brain, notifications) are platform-agnostic. Adding a platform only requires a client + normalizer.
 - Client: Async Python (asyncio + websockets lib or official patterns). Robust reconnection, rate-limit handling.
 - Normalizer: Dedup events, standardize fields, compute basic derived (implied prob from prices).
 - Enrichment (light): Category tagging, time-to-resolution, simple macro context hooks.
@@ -68,7 +71,22 @@ Hybrid approach (fast validation):
 - Backtesting harness: Replay historical resolved markets, measure calibration (predicted prob vs actual), Sharpe-like on simulated edges.
 - Later: Ensemble (XGBoost + small NN), online learning from feedback.
 
-## 5. Agentic Legwork Layer (Phase 2)
+## 5. Agentic Legwork Layer (Phase 2 — Hardened v2)
+
+The original single-shot research agent has been significantly extended:
+
+- **Multi-step ReAct-style loop** with explicit tool calling (knowledge_base always available; web_search opt-in).
+- **Critic / Debate agent** — second pass that reviews the draft thesis and explicitly calls out weaknesses, missing factors, and over-optimism.
+- **Short-term memory** — agents recall recent similar opportunities (by category + recency) and inject them into reasoning.
+- **Rich structured output** — `AgentResearchBrief` v2 now contains `debate_summary`, `weaknesses`, `tool_calls`, `memory_used`, `confidence_breakdown`, `steps_taken`, etc.
+- **Full configurability** — `AgentConfig` (YAML or env-derived) controls model, temperature, max_steps, which tools are enabled, critic/memory toggles, prompt overrides, and `backend` ("auto" | "python" | "langgraph").
+- **Observability** — `AgentMetrics` records success rate, avg latency, tool usage, failure modes, and step counts. Exposed in engine logs + via FastAPI at `/metrics/agents` and `/metrics/agents/runs`.
+- **Optional LangGraph backend** — When `langgraph` is installed and `agent_backend` is "auto" or "langgraph", a compiled state graph can be used for the research loop (graceful fallback to pure Python).
+- **Persistent memory** — `ShortTermAgentMemory` supports "file" or "postgres" persistence (best-effort) in addition to pure in-memory.
+
+Triggering remains strictly gated behind `agent_min_composite_to_research` (and `passed_filter`) to control compute cost.
+
+See `src/prediction_alpha/agents/` (tools.py, memory.py, config.py, legwork.py) and `agent_config.example.yaml`.
 
 - Triggered on high-scoring candidates (pre-filter).
 - Agents (LangGraph or custom):
@@ -159,3 +177,32 @@ All non-negotiable requirements from the master prompt are satisfied:
 Future work (Phase 4 roadmap items) can now be built on a solid, proven foundation instead of scaffolding.
 
 This is no longer a design doc — it is a living description of a running system.
+
+## 14. True Neutral Brain v2 Integration (Concrete Implementation)
+
+The original preparation hook has evolved into a full bidirectional integration layer (`src/prediction_alpha/brain/`).
+
+**Ingestion Flow**:
+1. Opportunity passes strict multi-stage filter + agents.
+2. Background task (via TaskManager) calls `TrueNeutralBrainIngestor.ingest()`.
+3. Rich `BrainOpportunity` is constructed with wealth-track tags, macro signals, agent thesis + debate.
+4. Upserted into `brain_opportunities` (dedup on `event_id`).
+5. Embedding generated (stub or real local model) and stored in pgvector column.
+
+**Key Artifacts**:
+- `BrainIngestionConfig` (thresholds, categories, embedding settings) — YAML or env.
+- `BrainOpportunity` model (graph + RAG ready).
+- `BrainRetriever` with wealth-track-aware and semantic queries.
+- Automatic schema creation for `brain_opportunities` table + vector indexes.
+
+**Sovereign Pattern**:
+- Everything lives in the same Postgres instance the engine already uses (pgvector extension).
+- No external SaaS vector DB required.
+- Embeddings can be generated locally (sentence-transformers) or via a self-hosted embedding service.
+
+**Value to the 24-Month Wealth Plan**:
+- The Brain no longer has to reason over raw Kalshi data.
+- It receives pre-filtered, pre-researched, wealth-track-tagged probability updates with thesis/counter/debate already attached.
+- Perfect for macro hedge sizing, ag policy monitoring, housing rate risk models, etc.
+
+Example full flow is demonstrated in `scripts/demo_brain_ingestion.py`.

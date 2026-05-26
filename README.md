@@ -52,8 +52,12 @@ pip install -r requirements.txt
 pip install -e .
 cp .env.example .env
 # Public Kalshi market data works read-only; set DATABASE_URL to store to Postgres.
+# Kalshi
 python -m prediction_alpha.ingestion.cli backfill --max-pages 1 --print-json
 python -m prediction_alpha.ingestion.cli stream --channels ticker trade market_lifecycle_v2
+
+# Polymarket (read-only via Gamma API)
+python -m prediction_alpha.ingestion.cli backfill --platform polymarket --max-pages 1 --print-json
 ```
 
 To persist normalized events and scores:
@@ -126,6 +130,38 @@ docker compose up -d --build
 
 See `docs/DEPLOY.md` for production VPS, systemd, and scaling notes.
 
+### Testing the Next Sprint Features (Agents + Brain + Feedback + Polymarket)
+
+```bash
+# 1. Hardened Agents + Critic + Observability
+PYTHONPATH=src python scripts/demo_enhanced_agents.py
+
+# View agent metrics via API (after starting uvicorn)
+curl http://localhost:8000/metrics/agents
+
+# 2. True Neutral Brain v2 Ingestion + Retrieval (wealth-track tagging)
+PYTHONPATH=src python scripts/demo_brain_ingestion.py
+
+# Query Brain data
+curl "http://localhost:8000/metrics/brain?track=housing"
+
+# 3. Feedback / Self-Improvement Loop
+PYTHONPATH=src python scripts/run_feedback_recalibration.py
+
+# Log a manual resolution (demo)
+curl -X POST http://localhost:8000/feedback/log_resolution \
+  -H "Content-Type: application/json" \
+  -d '{"event_id": "demo-123", "actual": 1.0, "predicted": 0.65}'
+
+curl http://localhost:8000/metrics/feedback
+
+# 4. Polymarket alongside Kalshi (read-only)
+python -m prediction_alpha.ingestion.cli backfill --platform polymarket --max-pages 1 --print-json
+```
+
+All features are heavily configurable via `.env` and YAML files (see `agent_config.example.yaml`, `brain` section in Settings, etc.).
+
+
 **API while the engine runs**
 
 ```bash
@@ -138,7 +174,7 @@ curl 'http://localhost:8000/opportunities?min_score=0.55&passed_only=true'
 
 
 ## Integration Points
-- **True Neutral Brain v2**: Event nodes in knowledge graph, RAG corpus updates, probability feeds for wealth plan recommendations (e.g., macro hedges for housing Track A or ag policy for drones).
+- **True Neutral Brain v2**: Full integration layer (`src/prediction_alpha/brain/`). High-value filtered + agent-researched opportunities are automatically ingested as rich graph nodes + pgvector embeddings. Wealth-track tagging, deduplication, configurable filters, and powerful retrieval helpers (`get_for_wealth_track`, semantic search, etc.). See `scripts/demo_brain_ingestion.py`.
 - **UnifyOne / Master Control**: Opportunity queue + dashboard module. Selective notifications (email, Telegram, in-app).
 - **Wealth Tracks**: Surface edges relevant to housing portfolio (macro), Cleveland PM (local econ), Oregon ag drone (weather/policy), PACER (regulatory events).
 - **Other bots**: Synergy with gov contract watch, news enrichment, content clipping (market narratives as Shorts).
@@ -167,7 +203,7 @@ Built for Keith / 1COMMERCE LLC — profit-first sovereign automation.
 
 ---
 
-*Status: ✅ Full end-to-end MVP complete and runnable (Phases A–E). Ready for paper-trading research and True Neutral Brain integration.*
+*Status: ✅ Next Sprint Complete — Agent Layer hardened (Critic + tools + observability), real True Neutral Brain v2 ingestion (graph + pgvector + wealth-track tagging + background), basic feedback/self-improvement loop (outcomes + calibration + retraining hook), and Polymarket read-only support fully integrated. High configurability prioritized.*
 
 ## Implementation Status (Full MVP Delivered)
 
@@ -181,10 +217,15 @@ All layers from the master prompt are complete and runnable:
 - Feature engineering + configurable hybrid scorer (rules + placeholder ML)
 - Hard filters → ML score → portfolio fit gate
 
-**Phase C – Agentic Legwork** ✅ Background + Sovereign
-- Research + planning agents via clean async orchestration (Ollama preferred)
-- Only triggered on opportunities passing early high bars
-- Structured `AgentResearchBrief` + human summary
+**Phase C – Agentic Legwork (Hardened v2)** ✅ Powerful & Observable
+- Multi-step ReAct reasoning + pluggable tools (knowledge_base always on; web_search opt-in)
+- Dedicated **Critic/Debate** agent that surfaces weaknesses and missing factors
+- Short-term memory (recalls recent similar opportunities)
+- Extremely configurable (`agent_config.yaml` or env): steps, temperature, tools, critic, memory
+- Rich `AgentResearchBrief` v2 with debate, tool trace, confidence breakdown, memory_used
+- Built-in `AgentMetrics` (success rate, timings, tool usage, failures)
+- **New (v2.1)**: Optional LangGraph backend, persistent memory (file/postgres), `/metrics/agents` API endpoints
+- Sovereign defaults: local Ollama primary, web search **disabled** by default, perfect stub fallback
 
 **Phase D – Notifications + Brain Prep** ✅ Selective
 - Console + SMTP email stub (only top-tier, attention-protected)
@@ -194,6 +235,20 @@ All layers from the master prompt are complete and runnable:
 - `python run.py --continuous` for 24/7 background operation
 - Structured logging, task manager, graceful shutdown
 - FastAPI + Docker + full test coverage on critical paths
+
+### Exploring the Hardened Agents
+
+```bash
+# Best demo of the new v2 agent capabilities (tools, critic, memory, metrics)
+PYTHONPATH=src python scripts/demo_enhanced_agents.py
+
+# With real local LLM (recommended)
+ollama serve
+ollama pull llama3.2
+PYTHONPATH=src python scripts/demo_enhanced_agents.py
+```
+
+See `agent_config.example.yaml` for all the new knobs and `src/prediction_alpha/agents/` for the implementation.
 
 See `docs/DEPLOY.md` and the "How to Run" section above.
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from prediction_alpha.config import get_settings
 from prediction_alpha.ingestion.kalshi_client import KalshiRESTClient, KalshiWebSocketClient
+from prediction_alpha.ingestion.polymarket_client import PolymarketRESTClient
 from prediction_alpha.ingestion.storage import PostgresStore
 from prediction_alpha.scoring.scorer import HybridScorer
 from prediction_alpha.utils.logging import configure_logging, get_logger
@@ -31,25 +32,37 @@ async def backfill(args: argparse.Namespace) -> None:
         await store.create_schema()
     scorer = HybridScorer.from_settings(settings)
     count = 0
-    async with KalshiRESTClient(settings) as client:
-        async for event in client.iter_markets(
-            status=args.status, limit=args.limit, max_pages=args.max_pages
-        ):
-            score = scorer.score(event)
-            await _maybe_store(store, event, score)
-            if args.print_json:
-                print(
-                    json.dumps(
-                        {
-                            "event": event.model_dump(mode="json"),
-                            "score": score.model_dump(mode="json"),
-                        }
-                    )
-                )
-            count += 1
+
+    platform = getattr(args, "platform", "kalshi").lower()
+
+    if platform == "polymarket":
+        if not getattr(settings, "polymarket_enabled", True):
+            log.warning("polymarket_disabled_in_config")
+            return
+        async with PolymarketRESTClient(settings) as client:
+            async for event in client.iter_markets(
+                active=True, closed=False, limit=args.limit, max_pages=args.max_pages
+            ):
+                score = scorer.score(event)
+                await _maybe_store(store, event, score)
+                if args.print_json:
+                    print(json.dumps({"event": event.model_dump(mode="json"), "score": score.model_dump(mode="json")}))
+                count += 1
+    else:
+        # Default: Kalshi
+        async with KalshiRESTClient(settings) as client:
+            async for event in client.iter_markets(
+                status=args.status, limit=args.limit, max_pages=args.max_pages
+            ):
+                score = scorer.score(event)
+                await _maybe_store(store, event, score)
+                if args.print_json:
+                    print(json.dumps({"event": event.model_dump(mode="json"), "score": score.model_dump(mode="json")}))
+                count += 1
+
     if store:
         await store.close()
-    log.info("backfill_complete", markets=count, stored=bool(store))
+    log.info("backfill_complete", platform=platform, markets=count, stored=bool(store))
 
 
 async def stream(args: argparse.Namespace) -> None:
@@ -90,7 +103,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prediction Alpha Phase 1 Kalshi tools")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    backfill_parser = sub.add_parser("backfill", help="Backfill recent Kalshi markets")
+    backfill_parser = sub.add_parser("backfill", help="Backfill markets (Kalshi or Polymarket)")
+    backfill_parser.add_argument("--platform", default="kalshi", choices=["kalshi", "polymarket"],
+                                 help="Data source platform (default: kalshi)")
     backfill_parser.add_argument("--status", default="open")
     backfill_parser.add_argument("--limit", type=int, default=100)
     backfill_parser.add_argument("--max-pages", type=int, default=1)

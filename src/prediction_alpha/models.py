@@ -164,23 +164,45 @@ class OpportunityScore(BaseModel):
 
 
 class AgentResearchBrief(BaseModel):
-    """Structured output from the research + planning agents (Phase C).
+    """Rich structured output from the hardened agentic legwork layer (Phase C+).
 
-    Designed to be attached to OpportunityScore and exported to True Neutral Brain.
+    Supports multi-step research, tool use, critic/debate review, and memory.
+    Backward compatible with previous single-shot briefs.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     event_id: str
+
+    # Core thesis (improved)
     thesis: str
     counter_thesis: str
+
+    # Enhanced analysis
     key_drivers: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
-    recommended_sizing: str | None = None  # e.g. "small paper position"
-    confidence_in_edge: float  # 0..1
+    recommended_sizing: str | None = None
+
+    # New hardened fields
+    debate_summary: str | None = None  # output from Critic/Debate agent
+    weaknesses: list[str] = Field(default_factory=list)  # flagged by critic
+    additional_factors: list[str] = Field(default_factory=list)
+
+    # Execution trace
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)  # [{tool, args, result_summary}]
+    steps_taken: int = 1
+    memory_used: list[str] = Field(default_factory=list)  # summaries of recalled similar opportunities
+
+    confidence_in_edge: float  # overall 0..1
+    confidence_breakdown: dict[str, float] = Field(default_factory=dict)  # e.g. {"macro": 0.8, "liquidity": 0.6}
+
     sources: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    raw_agent_output: str | None = None  # full LLM response for audit
+    raw_agent_output: str | None = None  # last or concatenated LLM responses for audit
+
+    # For observability / Brain
+    agent_version: str = "2.0-hardened"
+    processing_time_seconds: float | None = None
 
 
 # Convenience type aliases for downstream code

@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 
 from prediction_alpha.agents.legwork import stub_research_brief, AgentOrchestrator
+from prediction_alpha.agents import AgentOrchestrator as AgentOrchestratorV2  # for v2 tests
+from prediction_alpha.agents.memory import MemoryEntry
 from prediction_alpha.config import Settings
 from prediction_alpha.models import Event, EventStatus, OpportunityScore, Platform, RecommendedAction
 from prediction_alpha.notifications.notifier import get_notifier
@@ -92,3 +94,86 @@ def test_engine_run_once_smoke_no_crash() -> None:
     result = asyncio.run(engine.run_once(max_pages=1, status="open"))
     assert "processed" in result
     assert result["processed"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# Hardened v2 agent layer tests
+# ---------------------------------------------------------------------------
+
+
+def test_stub_produces_rich_v2_brief() -> None:
+    from prediction_alpha.agents import stub_research_brief
+
+    ev = _make_high_value_event()
+    sc = _make_high_value_score(ev)
+    brief = stub_research_brief(ev, sc)
+
+    assert brief.event_id == ev.id
+    assert brief.debate_summary is not None
+    assert len(brief.weaknesses) >= 1 or "Stub" in (brief.debate_summary or "")
+    assert brief.agent_version.startswith("2.")
+
+
+def test_tools_knowledge_and_registry() -> None:
+    from prediction_alpha.agents.tools import KnowledgeTool, ToolRegistry, get_default_registry
+
+    reg = ToolRegistry()
+    assert "knowledge_base" in [t.name for t in reg.list_enabled()]
+
+    tool = KnowledgeTool()
+    import asyncio
+
+    res = asyncio.run(tool.run(category="econ"))
+    assert "Fed" in res.content or "inflation" in res.content.lower()
+    assert res.confidence > 0.7
+
+
+def test_memory_recall() -> None:
+    from prediction_alpha.agents.memory import MemoryEntry, ShortTermAgentMemory
+
+    mem = ShortTermAgentMemory(max_entries=5)
+    mem.remember(MemoryEntry("e1", "econ", "Fed cut", 0.08, 0.65, "Strong housing tailwind"))
+    mem.remember(MemoryEntry("e2", "policy", "Tariff", -0.03, 0.40, "Ag input costs"))
+
+    econ = mem.recall_similar(category="econ")
+    assert len(econ) == 1
+    assert "housing" in econ[0].summary.lower()
+
+
+def test_hardened_orchestrator_stub_path_and_rich_output() -> None:
+    """Even in stub mode (or no LLM), the new rich fields are populated."""
+    settings = Settings(agent_enabled=False)  # forces stub
+    orch = AgentOrchestrator(settings)
+
+    ev = _make_high_value_event()
+    sc = _make_high_value_score(ev)
+
+    import asyncio
+
+    brief = asyncio.run(orch.run_for_score(ev, sc))
+
+    assert brief.event_id == ev.id
+    assert brief.steps_taken == 0  # stub path
+    assert "Stub" in (brief.debate_summary or "") or brief.debate_summary is not None
+    assert isinstance(brief.tool_calls, list)
+
+
+def test_agent_config_backend_and_persist_fields() -> None:
+    from prediction_alpha.agents.config import AgentConfig
+    from prediction_alpha.config import Settings
+
+    cfg = AgentConfig(backend="auto")
+    assert cfg.backend in {"auto", "python", "langgraph"}
+
+    s = Settings(agent_backend="python", agent_memory_persist="file")
+    assert s.agent_backend == "python"
+    assert s.agent_memory_persist == "file"
+
+
+def test_persistent_memory_factory() -> None:
+    from prediction_alpha.agents.memory import create_persistent_memory
+
+    mem = create_persistent_memory(persist_mode="none")
+    assert len(mem) == 0
+    mem.remember(MemoryEntry("x1", "econ", "Test", 0.1, 0.6, "demo"))
+    assert len(mem) == 1

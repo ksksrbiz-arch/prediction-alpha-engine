@@ -1,0 +1,87 @@
+# Production docker-compose for Prediction Alpha Engine
+# Usage:
+#   cp .env.example .env   # fill in real secrets
+#   docker compose up -d --build
+#
+# For continuous background operation (recommended):
+#   The default command now runs `python run.py --continuous`
+
+version: "3.9"
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prediction-alpha-engine
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://prediction_alpha:prediction_alpha@db:5432/prediction_alpha
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: ["python", "run.py", "--continuous"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, os; port=os.environ.get('API_PORT','8000'); urllib.request.urlopen(f'http://localhost:{port}/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL + pgvector (required for events, scores, Brain storage)
+  db:
+    image: postgres:16-alpine
+    container_name: prediction-alpha-db
+    environment:
+      POSTGRES_USER: prediction_alpha
+      POSTGRES_PASSWORD: prediction_alpha
+      POSTGRES_DB: prediction_alpha
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prediction_alpha -d prediction_alpha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Optional: Redis (useful for future task queues / rate limiting / caching)
+  redis:
+    image: redis:7-alpine
+    container_name: prediction-alpha-redis
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    profiles: ["with-redis"]
+
+  # Optional: Local Ollama (strongly recommended for sovereign agent operation)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: prediction-alpha-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    profiles: ["with-llm"]
+
+volumes:
+  pgdata:
+  redisdata:
+  ollama:

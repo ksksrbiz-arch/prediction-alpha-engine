@@ -44,3 +44,35 @@ def test_normalize_ws_message_accepts_nested_market_payload() -> None:
     assert event.external_id == "KXFED-26MAY-HIKE"
     assert event.title == "KXFED-26MAY-HIKE"
     assert event.implied_prob == 0.61
+
+
+# --- Polymarket normalization tests ---
+
+from prediction_alpha.ingestion.normalizer import normalize_polymarket_market
+
+
+def test_normalize_polymarket_market_binary() -> None:
+    raw = {
+        "id": "0xpolymarket123",
+        "question": "Will ETH be above $3000 by end of 2026?",
+        "slug": "eth-3000-eoy-2026",
+        "outcomes": ["Yes", "No"],
+        "outcomePrices": ["0.65", "0.35"],
+        "volume24hr": 125000,
+        "liquidityNum": 45000,
+        "endDate": "2026-12-31T23:59:59Z",
+        "active": True,
+        "category": "Crypto",
+    }
+
+    event = normalize_polymarket_market(raw)
+
+    assert event.platform.value == "polymarket"
+    assert event.external_id == "0xpolymarket123"
+    assert event.yes_price == 0.65
+    assert event.no_price == 0.35
+    assert event.implied_prob == 0.65
+    assert event.volume_24h == 125000
+    assert "on_chain" in event.enriched_features
+    assert event.enriched_features["on_chain"] is True
+    assert event.category in ("crypto", "unknown")  # depending on keyword match

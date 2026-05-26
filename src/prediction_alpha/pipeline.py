@@ -1,11 +1,11 @@
 """End-to-end orchestration layer: the beating heart of the Prediction Alpha Engine.
 
 This module wires:
-  Ingestion (REST backfill + WS stream)
-    → Feature + Hybrid Scoring (strict filters)
+  Ingestion (Kalshi + Polymarket via pluggable clients)
+    → Feature + Hybrid Scoring (platform-agnostic)
     → Agentic Legwork (only on high-conviction candidates)
-    → Final Gate + Notifications (ultra-selective)
-    → Brain Export Hook
+    → Final Gate + Notifications + Brain Ingestion
+  (See ingestion/cli.py --platform and src/prediction_alpha/brain/ for cross-platform details)
 
 It is deliberately background-friendly and can be run as:
 - One-shot batch (for testing / cron)
@@ -23,11 +23,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from prediction_alpha.agents.legwork import AgentOrchestrator
+from prediction_alpha.agents.legwork import AgentOrchestrator, get_agent_metrics
 from prediction_alpha.config import Settings, get_settings
 from prediction_alpha.ingestion.kalshi_client import KalshiRESTClient
+# Polymarket support is available via PolymarketRESTClient (see ingestion/cli.py --platform polymarket)
+# Full parallel multi-platform orchestration can be added here in a future iteration.
 from prediction_alpha.ingestion.storage import PostgresStore
 from prediction_alpha.models import Event, OpportunityScore
+from prediction_alpha.brain.ingestor import TrueNeutralBrainIngestor
 from prediction_alpha.notifications.brain import prepare_brain_payload
 from prediction_alpha.notifications.notifier import get_notifier
 from prediction_alpha.scoring.scorer import HybridScorer
@@ -48,8 +51,13 @@ class PredictionAlphaEngine:
         self.settings = settings or get_settings()
         self.scorer = HybridScorer.from_settings(self.settings)
         self.notifier = get_notifier(self.settings)
-        self.agent_orchestrator = AgentOrchestrator(self.settings)
         self.store: PostgresStore | None = None
+        # Orchestrator created without store initially; it will use in-memory memory
+        # until a run that calls _ensure_store (persistence is best-effort).
+        self.agent_orchestrator = AgentOrchestrator(self.settings, postgres_store=None)
+
+        # True Neutral Brain v2 ingestor (created lazily when store is ready)
+        self.brain_ingestor: TrueNeutralBrainIngestor | None = None
         self._log = get_logger("engine")
 
     async def _ensure_store(self) -> PostgresStore | None:
@@ -57,10 +65,25 @@ class PredictionAlphaEngine:
             self.store = PostgresStore(self.settings.database_url)
             try:
                 await self.store.create_schema()
+                # Also ensure Brain tables exist
+                from prediction_alpha.ingestion.storage import _create_brain_schema
+                brain_cfg = self.settings.build_brain_config()
+                await _create_brain_schema(self.store, brain_cfg.embedding_dimension)
             except Exception as exc:  # noqa: BLE001
                 self._log.warning("db_schema_failed_continue_without_persist", error=str(exc))
                 self.store = None
         return self.store
+
+    async def _get_brain_ingestor(self) -> TrueNeutralBrainIngestor | None:
+        if not self.settings.brain_ingest_enabled:
+            return None
+        if self.brain_ingestor is None:
+            store = await self._ensure_store()
+            if store:
+                brain_cfg = self.settings.build_brain_config()
+                self.brain_ingestor = TrueNeutralBrainIngestor(store, brain_cfg)
+                await self.brain_ingestor.ensure_schema()
+        return self.brain_ingestor
 
     async def process_event(
         self, event: Event, *, force_agent: bool = False
@@ -88,29 +111,48 @@ class PredictionAlphaEngine:
         ):
             async def _agent_job() -> None:
                 enriched = await self.agent_orchestrator.enrich_score_with_plan(event, score)
-                # Re-evaluate notification gate after agent insights (future: re-score)
+
+                # Re-evaluate notification gate after agent insights
                 if self.notifier.should_notify(enriched):
                     notif = self.notifier.build_notification(
                         event, enriched, enriched.research_brief
                     )
                     await self.notifier.dispatch(notif)
 
-                    # Brain prep hook (fire-and-forget friendly)
-                    brain_payload = prepare_brain_payload(event, enriched, enriched.research_brief)
-                    self._log.info(
-                        "brain_payload_ready",
-                        event_id=event.id,
-                        score=round(enriched.composite_score, 3),
-                        # In real life: await brain_client.ingest(brain_payload)
-                    )
-                # TODO: later re-persist the enriched score with agent data
+                # === True Neutral Brain v2 Ingestion (new concrete integration) ===
+                ingestor = await self._get_brain_ingestor()
+                if ingestor:
+                    async def _brain_ingest_job() -> None:
+                        try:
+                            await ingestor.ingest(event, enriched, enriched.research_brief)
+                        except Exception as exc:  # noqa: BLE001
+                            self._log.warning("brain_ingest_failed", event_id=event.id, error=str(exc)[:160])
+                    task_manager.submit(_brain_ingest_job(), name=f"brain-ingest-{event.id[:12]}")
+
+                # Legacy prep hook (still useful for external Brain services)
+                brain_payload = prepare_brain_payload(event, enriched, enriched.research_brief)
+                self._log.info(
+                    "brain_payload_ready",
+                    event_id=event.id,
+                    score=round(enriched.composite_score, 3),
+                )
 
             task_manager.submit(_agent_job(), name=f"agent-{event.id[:12]}")
         else:
-            # Even without full agents, if it is *extremely* high value, still notify
+            # Even without full agents, if it is *extremely* high value, still notify + ingest
             if self.notifier.should_notify(score):
                 notif = self.notifier.build_notification(event, score)
                 await self.notifier.dispatch(notif)
+
+                ingestor = await self._get_brain_ingestor()
+                if ingestor:
+                    async def _brain_ingest_job() -> None:
+                        try:
+                            await ingestor.ingest(event, score)
+                        except Exception as exc:  # noqa: BLE001
+                            self._log.warning("brain_ingest_failed", event_id=event.id, error=str(exc)[:160])
+                    task_manager.submit(_brain_ingest_job(), name=f"brain-ingest-{event.id[:12]}")
+
                 brain_payload = prepare_brain_payload(event, score)
                 self._log.info("brain_payload_ready", event_id=event.id, score=score.composite_score)
 
@@ -150,12 +192,14 @@ class PredictionAlphaEngine:
             high_value=high_value,
             notified=notified,
             pending_tasks=task_manager.pending_count,
+            agent_metrics=get_agent_metrics().summary(),
         )
         return {
             "processed": processed,
             "high_value": high_value,
             "notified": notified,
             "pending_background": task_manager.pending_count,
+            "agent_metrics": get_agent_metrics().summary(),
         }
 
     async def run_forever(

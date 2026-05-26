@@ -25,7 +25,8 @@ def compute_features(event: Event) -> dict[str, Any]:
         )
     candles = event.enriched_features.get("candles") or event.raw_metadata.get("candles")
     volume_trend = _volume_trend(candles)
-    return {
+
+    features = {
         "implied_prob": implied_prob,
         "liquidity_score": event.liquidity_score,
         "days_to_resolution": days_to_resolution,
@@ -34,7 +35,19 @@ def compute_features(event: Event) -> dict[str, Any]:
         "volume_trend": volume_trend,
         "category": event.category,
         "status": event.status.value,
+        "platform": event.platform.value,
     }
+
+    # Polymarket-specific signals (on-chain transparency, crypto correlation hooks)
+    if event.platform.value == "polymarket":
+        ef = event.enriched_features or {}
+        features["on_chain"] = ef.get("on_chain", True)
+        features["clob_liquidity_proxy"] = event.open_interest or event.liquidity_score * 10000
+        # Placeholder for future crypto price correlation (e.g. ETH/BTC moves affecting election markets)
+        # In a real deployment this could pull from a local price feed.
+        features["crypto_correlation_available"] = False
+
+    return features
 
 
 def _volume_trend(candles: Any) -> float | None:

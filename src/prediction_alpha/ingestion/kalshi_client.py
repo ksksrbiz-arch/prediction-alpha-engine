@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from collections.abc import AsyncIterator, Iterable
 from typing import Any, cast
 
@@ -182,7 +183,7 @@ class KalshiWebSocketClient:
         channels: Iterable[str] = ("ticker", "trade", "market_lifecycle_v2"),
         market_tickers: Iterable[str] | None = None,
     ) -> AsyncIterator[Event]:
-        """Yield normalized live events forever, reconnecting with exponential backoff."""
+        """Yield normalized live events forever with resilient reconnection."""
 
         reconnect_delay = self.settings.kalshi_ws_reconnect_initial_seconds
         while True:
@@ -204,12 +205,13 @@ class KalshiWebSocketClient:
                         if event is not None:
                             yield event
             except (OSError, websockets.WebSocketException, TimeoutError) as exc:
+                jitter = random.uniform(0, 0.3) * reconnect_delay
                 self._log.warning(
                     "kalshi_ws_reconnect",
-                    error=str(exc),
-                    reconnect_delay=reconnect_delay,
+                    error=str(exc)[:200],
+                    reconnect_delay=round(reconnect_delay, 1),
                 )
-                await asyncio.sleep(reconnect_delay)
+                await asyncio.sleep(reconnect_delay + jitter)
                 reconnect_delay = min(
                     reconnect_delay * 2,
                     self.settings.kalshi_ws_reconnect_max_seconds,

@@ -164,3 +164,60 @@ class PostgresStore:
 
 event_adapter = TypeAdapter(Event)
 score_adapter = TypeAdapter(OpportunityScore)
+
+
+async def _create_brain_schema(store: PostgresStore, embedding_dimension: int = 768) -> None:
+    """Helper to create brain tables (can be called from ingestor or engine)."""
+    async with store.connection() as conn:
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
+        await conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS brain_opportunities (
+                id TEXT PRIMARY KEY,
+                event_id TEXT NOT NULL UNIQUE,
+                platform TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL,
+
+                implied_prob DOUBLE PRECISION,
+                liquidity_score DOUBLE PRECISION,
+                days_to_resolution DOUBLE PRECISION,
+                volume_24h DOUBLE PRECISION,
+                open_interest DOUBLE PRECISION,
+
+                edge_score DOUBLE PRECISION NOT NULL,
+                composite_score DOUBLE PRECISION NOT NULL,
+                confidence DOUBLE PRECISION,
+                recommended_action TEXT,
+
+                agent_thesis TEXT,
+                agent_counter_thesis TEXT,
+                agent_sizing TEXT,
+                debate_summary TEXT,
+
+                rationale JSONB,
+                agent_drivers JSONB,
+                agent_risks JSONB,
+                weaknesses JSONB,
+                macro_signals JSONB,
+
+                wealth_tracks TEXT[] NOT NULL DEFAULT '{{}}',
+                policy_tags TEXT[] NOT NULL DEFAULT '{{}}',
+
+                text_for_embedding TEXT NOT NULL,
+                embedding VECTOR({embedding_dimension}),
+
+                ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                source_engine_version TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_brain_opp_composite ON brain_opportunities (composite_score DESC);
+            CREATE INDEX IF NOT EXISTS idx_brain_opp_wealth_tracks ON brain_opportunities USING GIN (wealth_tracks);
+            CREATE INDEX IF NOT EXISTS idx_brain_opp_embedding
+                ON brain_opportunities USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+            """
+        )
+

@@ -16,15 +16,30 @@ from fastapi import FastAPI
 from prediction_alpha.api.routes import router
 from prediction_alpha.api.tasks import task_manager
 from prediction_alpha.config import Settings, get_settings
+from prediction_alpha.feedback.loop import FeedbackLoop
+from prediction_alpha.ingestion.storage import PostgresStore
 from prediction_alpha.utils.logging import configure_logging
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Startup / shutdown hooks — wire up background task manager."""
+    """Startup / shutdown hooks — wire up background task manager + feedback loop."""
 
     settings: Settings = app.state.settings
     configure_logging(settings.log_level)
+
+    # Initialize feedback loop for calibration tracking
+    store = PostgresStore(settings.database_url) if settings.database_url else None
+    if store:
+        try:
+            feedback = FeedbackLoop(store)
+            await feedback.ensure_schema()
+            # Inject into routes (simple global for MVP)
+            from prediction_alpha.api import routes as api_routes
+            api_routes._feedback_loop = feedback
+        except Exception:
+            pass  # non-fatal
+
     yield
     await task_manager.shutdown()
 

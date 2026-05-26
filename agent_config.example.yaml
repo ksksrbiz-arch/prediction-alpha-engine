@@ -1,0 +1,27 @@
+# Agent configuration for the hardened legwork layer (v2)
+#
+# Drop this file next to .env and set AGENT_CONFIG_PATH=agent_config.yaml
+# or pass it via the Settings builder.
+#
+# All values have safe defaults. Only override what you need.
+
+model: "llama3.2"          # or phi3, qwen2.5:3b, mistral, etc.
+temperature: 0.28
+max_tokens: 950
+max_steps: 5               # ReAct/tool loop depth (higher = more compute)
+
+critic_enabled: true       # Dedicated debate / weakness-finding pass
+memory_enabled: true
+memory_max_recall: 3
+
+# Tools (sovereign & cost control)
+enable_tools:
+  - "knowledge_base"       # Always safe, zero egress, high signal for wealth tracks
+  # - "web_search"         # Only enable when you have a real provider wired (see tools.py)
+
+tool_timeout_seconds: 18
+
+# Optional prompt overrides (advanced)
+prompts:
+  # research_system: "Your custom system prompt here..."
+  # critic_system: "..."
