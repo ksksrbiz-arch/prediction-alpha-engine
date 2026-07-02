@@ -174,6 +174,7 @@ curl 'http://localhost:8000/opportunities?min_score=0.55&passed_only=true'
 
 
 ## Integration Points
+- **day-trade cortex (callable voice)**: `GET /cortex/signal?symbol=SPY` and `GET /cortex/signals?symbols=SPY,QQQ,BTC` translate cached scored opportunities into per-ticker directional scores in [-1, 1] (see `src/prediction_alpha/integrations/cortex.py` for the market→ticker rule table). The day-trade platform's confluence brain calls these as its `alpha_engine` voice; point it at this service via `ALPHA_ENGINE_URL`.
 - **True Neutral Brain v2**: Full integration layer (`src/prediction_alpha/brain/`). High-value filtered + agent-researched opportunities are automatically ingested as rich graph nodes + pgvector embeddings. Wealth-track tagging, deduplication, configurable filters, and powerful retrieval helpers (`get_for_wealth_track`, semantic search, etc.). See `scripts/demo_brain_ingestion.py`.
 - **UnifyOne / Master Control**: Opportunity queue + dashboard module. Selective notifications (email, Telegram, in-app).
 - **Wealth Tracks**: Surface edges relevant to housing portfolio (macro), Cleveland PM (local econ), Oregon ag drone (weather/policy), PACER (regulatory events).
