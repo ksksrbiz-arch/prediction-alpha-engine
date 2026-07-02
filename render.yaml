@@ -1,0 +1,37 @@
+databases:
+  - name: pae-postgres
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: prediction-alpha-engine
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: sh -c "uvicorn prediction_alpha.api.app:create_app --factory --host 0.0.0.0 --port $PORT"
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHONPATH
+        value: /app/src
+      - key: MIN_COMPOSITE_SCORE
+        value: "0.55"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pae-postgres
+          property: connectionString
+  - type: worker
+    name: pae-ingestion
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: sh -c "python run.py --continuous"
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: PYTHONPATH
+        value: /app/src
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pae-postgres
+          property: connectionString
