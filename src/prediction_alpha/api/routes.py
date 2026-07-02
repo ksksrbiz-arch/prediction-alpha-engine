@@ -137,6 +137,41 @@ async def ready() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Cortex bridge — callable voice for the day-trade platform
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cortex/signal", tags=["cortex"])
+async def cortex_signal(
+    symbol: str = Query(..., min_length=1, max_length=12, description="Ticker, e.g. SPY, QQQ, BTC"),
+) -> dict[str, Any]:
+    """Per-symbol directional signal in [-1, 1] for the day-trade cortex.
+
+    Aggregates every cached live prediction market that maps to the symbol
+    (see ``integrations.cortex``). ``score`` is null when nothing maps — the
+    trader treats that as an abstaining voice, not a zero vote.
+    """
+
+    from prediction_alpha.integrations.cortex import signal_for
+
+    sig = signal_for(symbol, _scored_cache)
+    _log.info("cortex_signal_queried", symbol=sig["symbol"], score=sig["score"], n=sig["n"])
+    return sig
+
+
+@router.get("/cortex/signals", tags=["cortex"])
+async def cortex_signals(
+    symbols: str = Query(default="SPY,QQQ,BTC", description="Comma-separated tickers"),
+) -> list[dict[str, Any]]:
+    """Batch form of /cortex/signal for the trader's watchlist sweep."""
+
+    from prediction_alpha.integrations.cortex import signals_for
+
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()][:25]
+    return signals_for(syms, _scored_cache)
+
+
+# ---------------------------------------------------------------------------
 # Simple Production Status Dashboard
 # ---------------------------------------------------------------------------
 
