@@ -8,7 +8,6 @@ services:
     name: prediction-alpha-engine
     runtime: docker
     dockerfilePath: ./Dockerfile
-    dockerCommand: sh -c "uvicorn prediction_alpha.api.app:create_app --factory --host 0.0.0.0 --port $PORT"
     plan: starter
     healthCheckPath: /health
     autoDeploy: true
@@ -25,7 +24,7 @@ services:
     name: pae-ingestion
     runtime: docker
     dockerfilePath: ./Dockerfile
-    dockerCommand: sh -c "python run.py --continuous"
+    dockerCommand: python run.py --continuous
     plan: starter
     autoDeploy: true
     envVars:
